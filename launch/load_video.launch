@@ -1,0 +1,8 @@
+<launch>
+    <rosparam file="$(find heart_pkg)/config/endoscope.yaml" command="load"/>
+
+    <node pkg="heart_pkg" name="video_to_ros" type="video_to_ros.py" output="screen">
+        <param name="original_video"
+            value="/home/corbe/heart_ws/src/heart_pkg/videos/HB_v1_src.mp4" />
+    </node>
+</launch>
