@@ -7,8 +7,19 @@
 #include <geometry_msgs/PointStamped.h>
 #include "data.h"
 
+// Costruttore vuoto della classe OpticalFlow
 OpticalFlow::OpticalFlow() {}
 
+/*
+  Funzione principale per calcolare l'optical flow tra due frame consecutivi
+  e aggiornare i punti tracciati.
+  Parametri:
+  - prev: frame precedente (cv::Mat)
+  - current: frame corrente (cv::Mat)
+  - movement_threshold_: soglia per distinguere punti dinamici da statici
+  - curr_originale: copia originale del frame corrente (per visualizzazione)
+  - depth: mappa depth corrispondente al frame corrente
+*/
 void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,
                                      cv::Mat &current,
                                      double &movement_threshold_,
@@ -17,6 +28,7 @@ void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,
 {
     cv::Mat old_gray, new_gray;
 
+    // Se le immagini non sono in scala di grigi, convertile
     if (prev.type() != CV_8UC1)
         cv::cvtColor(prev, old_gray, cv::COLOR_BGR2GRAY);
     else
@@ -27,60 +39,62 @@ void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,
     else
         new_gray = current;
 
-    // -------------------- Initialization --------------------
+    // -------------------- Inizializzazione --------------------
     if (first_time_) {
         std::vector<cv::Point2f> initial_points;
 
-        // Crea maschera nera
+        // Creazione maschera nera (serve per limitare la ricerca delle feature a una ROI)
         cv::Mat mask = cv::Mat::zeros(old_gray.size(), CV_8UC1);
 
-        // ROI in alto a destra 
+        // Definizione della ROI (in alto a destra)
         int width = old_gray.cols;
         int height = old_gray.rows;
-        int margin_right = width / 10;  // margine che lasci vuoto a destra
-        int roi_width    = width / 3;   // quanto è largo il rettangolo
-        int roi_height   = height / 7;  // quanto è alto
+        int margin_right = width / 10;  // margine destro da lasciare vuoto
+        int roi_width    = width / 3;   // larghezza del rettangolo
+        int roi_height   = height / 7;  // altezza del rettangolo
         int x_start      = width - roi_width - margin_right;
-        int y_start      = height / 20; // così non parte proprio dall'angolo in alto
+        int y_start      = height / 20; // leggermente spostato dall'alto
         cv::Rect ROI(x_start, y_start, roi_width, roi_height);
 
-        // Riempi la ROI a 
+        // Riempie la ROI con 255 nella maschera (dove cercare feature)
         mask(ROI).setTo(255);
 
-        // Cerca features solo nella ROI
+        // Rilevamento dei punti feature (goodFeaturesToTrack) solo nella ROI
         cv::goodFeaturesToTrack(
             old_gray,
             initial_points,
-            30,      // maxCorners
-            0.0005,    // qualityLevel
-            15,      // minDistance
-            mask     // <---- maschera qui
+            30,      // massimo numero di punti
+            0.0005,  // qualityLevel
+            15,      // distanza minima tra punti
+            mask     // maschera per limitare l'area
         );
 
+        // Pulizia delle strutture dati
         tracked_matches_.clear();
         dynamic_points_prev.clear();
 
+        // Creazione dei TrackedMatch per ogni punto rilevato
         for (const auto &p : initial_points) {
             float z = depth.at<float>(static_cast<int>(p.y), static_cast<int>(p.x));
             TrackedMatch tm;
-            tm.pt = p;
-            tm.position_3d = cv::Point3f(p.x, p.y, z);
-            tm.is_active = true;
-            tm.dynamic_point = false;
-            tm.history.push_back(tm.position_3d);
+            tm.pt = p;                              // coordinate 2D
+            tm.position_3d = cv::Point3f(p.x, p.y, z); // coordinate 3D usando depth
+            tm.is_active = true;                     // punto attivo
+            tm.dynamic_point = false;                // inizialmente statico
+            tm.history.push_back(tm.position_3d);    // salva la storia del punto
             tracked_matches_.push_back(tm);
             dynamic_points_prev.push_back(false);
         }
 
-        first_time_ = false;
+        first_time_ = false; // inizializzazione completata
         return;
     }
 
-
-    // -------------------- Build active set --------------------
+    // -------------------- Costruzione del set di punti attivi --------------------
     std::vector<cv::Point2f> prevPoints;
     std::vector<size_t> opticalFlowToMatchIdx;
 
+    // Considera solo i punti attivi
     for (size_t i = 0; i < tracked_matches_.size(); ++i) {
         if (tracked_matches_[i].is_active) {
             prevPoints.push_back(tracked_matches_[i].pt);
@@ -90,38 +104,40 @@ void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,
 
     if (prevPoints.empty()) {
         ROS_WARN("No active points to track. Recomputing features.");
-        first_time_ = true; // force reinit next frame
+        first_time_ = true; // forzo reinizializzazione al prossimo frame
         return;
     }
 
-    // -------------------- Optical flow --------------------
+    // -------------------- Calcolo dell'optical flow --------------------
     std::vector<cv::Point2f> nextPoints;
     std::vector<uchar> status;
     std::vector<float> err;
 
-    cv::Size winSize(21, 21);     // finestra di ricerca per ogni livello
-    int maxLevel = 3;             // numero di livelli di piramide
+    cv::Size winSize(21, 21);  // finestra di ricerca per LK
+    int maxLevel = 3;          // livelli di piramide
     cv::TermCriteria criteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 
-                            30, 0.01);  // max 30 iterazioni o precisione 0.01
+                              30, 0.01);  // max iterazioni o precisione
 
+    // Optical flow con algoritmo di Lucas-Kanade
     cv::calcOpticalFlowPyrLK(old_gray, new_gray,
-                            prevPoints, nextPoints,
-                            status, err,
-                            winSize,
-                            maxLevel,
-                            criteria,
-                            0,    // flags
-                            0.001 // soglia minima eigenvalue (se >0 scarta punti deboli)
+                             prevPoints, nextPoints,
+                             status, err,
+                             winSize,
+                             maxLevel,
+                             criteria,
+                             0,    // flags
+                             0.001 // soglia minima eigenvalue
     );
 
+    // -------------------- Aggiornamento dei TrackedMatch --------------------
     std::vector<cv::Point2f> good_old;
     std::vector<cv::Point2f> good_new;
     std::vector<bool> dynamic_current;
 
-    // -------------------- Update tracked matches --------------------
     for (size_t flow_idx = 0; flow_idx < opticalFlowToMatchIdx.size(); ++flow_idx) {
         size_t match_idx = opticalFlowToMatchIdx[flow_idx];
 
+        // Se il punto non è stato trovato, lo disattiviamo
         if (!status[flow_idx]) {
             tracked_matches_[match_idx].is_active = false;
             continue;
@@ -130,48 +146,34 @@ void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,
         cv::Point2f new_pt = nextPoints[flow_idx];
         float z = depth.at<float>(static_cast<int>(new_pt.y), static_cast<int>(new_pt.x));
 
+        // Calcolo del movimento
         double movement = cv::norm(new_pt - prevPoints[flow_idx]);
 
+        // Aggiornamento del TrackedMatch
         TrackedMatch &tm = tracked_matches_[match_idx];
         tm.pt = new_pt;
         tm.position_3d = cv::Point3f(new_pt.x, new_pt.y, z);
         tm.is_active = true;
 
-        // prima: tm.dynamic_point = (movement >= movement_threshold_);
+        // Se il movimento supera la soglia, il punto diventa dinamico
         if (movement >= movement_threshold_)
-            tm.dynamic_point = true;  // resta true per sempre se è superata almeno una volta
+            tm.dynamic_point = true;  
 
+        // Salvo la storia
         tm.history.push_back(tm.position_3d);
 
-        // for pose recovery
+        // Preparazione dei punti per il recover della posa
         good_old.push_back(prevPoints[flow_idx]);
         good_new.push_back(new_pt);
-        dynamic_current.push_back(tm.dynamic_point); // ok, ma qui leggi dal campo persistente
-        // // movement magnitude
-        // double movement = cv::norm(new_pt - prevPoints[flow_idx]);
-
-        // // update TrackedMatch
-        // TrackedMatch &tm = tracked_matches_[match_idx];
-        // tm.pt = new_pt;
-        // tm.position_3d = cv::Point3f(new_pt.x, new_pt.y, z);
-        // tm.is_active = true;
-        // tm.dynamic_point = (movement >= movement_threshold_);
-        // tm.history.push_back(tm.position_3d);
-
-        // //publishTrackedMatch(tm);
-
-        // // for pose recovery / visualization
-        // good_old.push_back(prevPoints[flow_idx]);
-        // good_new.push_back(new_pt);
-        // dynamic_current.push_back(tm.dynamic_point);
+        dynamic_current.push_back(tm.dynamic_point);
     }
 
-    // -------------------- Recover camera pose --------------------
+    // -------------------- Recupero della posa della camera --------------------
     if (!good_old.empty() && !good_new.empty()) {
         OpticalFlowPose::recoverPose(good_old, good_new, dynamic_current, curr_originale);
     }
 
-    // keep last frame points for reinitialization if needed
+    // Aggiorno i punti dell'ultimo frame per eventuale reinizializzazione
     points_prev_ = good_new;
     dynamic_points_prev = dynamic_current;
 }
