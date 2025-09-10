@@ -16,7 +16,7 @@ public:
                               const cv::Mat &prev_r, cv::Mat &current_r,
                               double &movement_threshold_,
                               std::vector<TrackedMatch> &tracked_matches);
-
+    void saveTrackedFeatures(const std::vector<TrackedMatch>& tracked_matches, const std::string& filename);
     
 private:
     bool first_time_;
