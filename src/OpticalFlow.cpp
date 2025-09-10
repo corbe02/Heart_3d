@@ -7,20 +7,13 @@
 #include <geometry_msgs/PointStamped.h>
 #include "data.h"
 #include <fstream>
+#include <cmath> // per std::isfinite
 
 // Costruttore vuoto della classe OpticalFlow
 OpticalFlow::OpticalFlow() {}
 
-/*
-  Funzione principale per calcolare l'optical flow tra due frame consecutivi
-  e aggiornare i punti tracciati.
-  Parametri:
-  - prev: frame precedente (cv::Mat)
-  - current: frame corrente (cv::Mat)
-  - movement_threshold_: soglia per distinguere punti dinamici da statici
-  - curr_originale: copia originale del frame corrente (per visualizzazione)
-  - depth: mappa depth corrispondente al frame corrente
-*/
+
+
 void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,
                                      cv::Mat &current,
                                      double &movement_threshold_,
@@ -29,172 +22,193 @@ void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,
 {
     cv::Mat old_gray, new_gray;
 
-    // Estraggo i parametri intrinseci della camera sinistra
+    // --- Parametri intrinseci camera (restano invariati) ---
     double fx = cameraMatrixLeft.at<double>(0, 0);
     double fy = cameraMatrixLeft.at<double>(1, 1);
     double cx = cameraMatrixLeft.at<double>(0, 2);
     double cy = cameraMatrixLeft.at<double>(1, 2);
 
+    // Converti immagini in gray
+    if (prev.type() != CV_8UC1) cv::cvtColor(prev, old_gray, cv::COLOR_BGR2GRAY);
+    else old_gray = prev;
 
-    // Se le immagini non sono in scala di grigi, convertile
-    if (prev.type() != CV_8UC1)
-        cv::cvtColor(prev, old_gray, cv::COLOR_BGR2GRAY);
-    else
-        old_gray = prev;
+    if (current.type() != CV_8UC1) cv::cvtColor(current, new_gray, cv::COLOR_BGR2GRAY);
+    else new_gray = current;
 
-    if (current.type() != CV_8UC1)
-        cv::cvtColor(current, new_gray, cv::COLOR_BGR2GRAY);
-    else
-        new_gray = current;
+    // --- depth -> float coerente ---
+    cv::Mat depth_float;
+    if (depth.empty()) {
+        ROS_WARN_STREAM("Depth input is empty!");
+        return;
+    }
+    if (depth.type() == CV_32F) {
+        depth_float = depth;
+    } else if (depth.type() == CV_16U) {
+        depth.convertTo(depth_float, CV_32F, 1.0f); // eventualmente moltiplica per fattore se necessario
+    } else if (depth.type() == CV_8U) {
+        depth.convertTo(depth_float, CV_32F, 1.0f / 255.0f);
+    } else {
+        depth.convertTo(depth_float, CV_32F);
+    }
+
+    // debug: dimensioni e range depth
+    if ( (depth_float.size() != old_gray.size()) ) {
+        ROS_WARN_STREAM("Size mismatch: depth_size=" << depth_float.size() 
+                        << " image_size=" << old_gray.size());
+        // non return: potremmo ancora campionare con clamp
+    }
+    double minD=0, maxD=0;
+    cv::minMaxLoc(depth_float, &minD, &maxD);
+    ROS_INFO_STREAM("Depth raw range: [" << minD << " , " << maxD << "]  (type=" << depth.type() << ")");
+
+    // Scale factor lo decidi tu; qui lo dichiariamo ma non lo forziamo
+    float scale_factor = 1.0f; // METRI PER UNITA' NELLA DEPTH (modificalo da te: es. 0.05, 0.01, 1000 ecc)
 
     // -------------------- Inizializzazione --------------------
     if (first_time_) {
         std::vector<cv::Point2f> initial_points;
 
-        // Creazione maschera nera (serve per limitare la ricerca delle feature a una ROI)
-        cv::Mat mask = cv::Mat::zeros(old_gray.size(), CV_8UC1); // maschera nera della stessa dimensione dell'immagine originale
-
-        // Definizione della ROI (in alto a destra)
+        // ROI mask
+        cv::Mat mask = cv::Mat::zeros(old_gray.size(), CV_8UC1);
         int width = old_gray.cols;
         int height = old_gray.rows;
-        int margin_right = width / 10;  // margine destro da lasciare vuoto
-        int roi_width    = width / 3;   // larghezza del rettangolo
-        int roi_height   = height / 7;  // altezza del rettangolo
+        int margin_right = width / 10;
+        int roi_width    = width / 3;
+        int roi_height   = height / 7;
         int x_start      = width - roi_width - margin_right;
-        int y_start      = height / 20; // leggermente spostato dall'alto
-        cv::Rect ROI(x_start, y_start, roi_width, roi_height); //creo rettangolo con quelle coordinate 
+        int y_start      = height / 20;
+        cv::Rect ROI(x_start, y_start, roi_width, roi_height);
+        mask(ROI).setTo(255);
 
-        // Riempie la ROI con 255 nella maschera (dove cercare feature)
-        mask(ROI).setTo(255); // --> metto bianca la zona in cui permetto di cercare le features 
+        cv::goodFeaturesToTrack(old_gray, initial_points, 30, 0.0005, 15, mask);
 
-        // Rilevamento dei punti feature (goodFeaturesToTrack) solo nella ROI
-        cv::goodFeaturesToTrack(
-            old_gray,
-            initial_points,
-            30,      // massimo numero di punti
-            0.0005,  // qualityLevel
-            15,      // distanza minima tra punti
-            mask     // maschera per limitare l'area
-        );
+        // affinamento subpixel (utile per campionare la depth più precisamente)
+        if (!initial_points.empty()) {
+            cv::cornerSubPix(old_gray, initial_points, cv::Size(5,5), cv::Size(-1,-1),
+                             cv::TermCriteria(cv::TermCriteria::COUNT|cv::TermCriteria::EPS, 20, 0.03));
+        }
 
-        // Pulizia delle strutture dati
         tracked_matches_.clear();
         dynamic_points_prev.clear();
 
-        // Creazione dei TrackedMatch per ogni punto rilevato
-        for (const auto &p : initial_points) {
-            float depth_value = depth.at<float>(static_cast<int>(p.y), static_cast<int>(p.x));
-            float scale_factor = 2.0f; // da calibrare empiricamente
+        // inizializzazione TrackedMatch con check depth
+        size_t debug_print_n = std::min<size_t>(5, initial_points.size());
+        for (size_t i = 0; i < initial_points.size(); ++i) {
+            const cv::Point2f &p = initial_points[i];
+            int px = std::max(0, std::min((int)std::round(p.x), depth_float.cols - 1));
+            int py = std::max(0, std::min((int)std::round(p.y), depth_float.rows - 1));
+            float depth_value = depth_float.at<float>(py, px);
 
-            float Z = depth_value * scale_factor;
-            float X = (p.x - cx) * Z / fx;
-            float Y = (p.y - cy) * Z / fy;
+            if (!std::isfinite(depth_value)) {
+                ROS_WARN_STREAM("Non-finite depth at ("<<px<<","<<py<<") -> skipping point");
+                continue;
+            }
+
+            float Z = depth_value * scale_factor; // tu imposti scale_factor
+            float X = (static_cast<float>(p.x) - static_cast<float>(cx)) * Z / static_cast<float>(fx);
+            float Y = (static_cast<float>(p.y) - static_cast<float>(cy)) * Z / static_cast<float>(fy);
 
             TrackedMatch tm;
-            tm.pt = p;                              // coordinate 2D
-            tm.position_3d = cv::Point3f(X, Y, Z);  // coordinate 3D metriche
+            tm.pt = p;
+            tm.position_3d = cv::Point3f(X, Y, Z);
             tm.is_active = true;
             tm.dynamic_point = false;
-            tm.history.push_back(tm.position_3d);   // salva la storia
+            tm.history.push_back(tm.position_3d);
             tracked_matches_.push_back(tm);
             dynamic_points_prev.push_back(false);
+
+            if (i < debug_print_n) {
+                ROS_INFO_STREAM("INIT pt["<<i<<"] pixel=("<<px<<","<<py<<") depth_raw="<<depth_value
+                                << " Z(m)="<<Z << " X(m)="<<X << " Y(m)="<<Y);
+            }
         }
 
-        first_time_ = false; // inizializzazione completata
+        first_time_ = false;
         return;
     }
 
-    // -------------------- Costruzione del set di punti attivi --------------------
+    // -------------------- Costruzione set punti attivi --------------------
     std::vector<cv::Point2f> prevPoints;
     std::vector<size_t> opticalFlowToMatchIdx;
-
-    // Considera solo i punti attivi
     for (size_t i = 0; i < tracked_matches_.size(); ++i) {
         if (tracked_matches_[i].is_active) {
             prevPoints.push_back(tracked_matches_[i].pt);
             opticalFlowToMatchIdx.push_back(i);
         }
     }
-
     if (prevPoints.empty()) {
         ROS_WARN("No active points to track. Recomputing features.");
-        first_time_ = true; // forzo reinizializzazione al prossimo frame
+        first_time_ = true;
         return;
     }
 
-    // -------------------- Calcolo dell'optical flow --------------------
+    // optical flow
     std::vector<cv::Point2f> nextPoints;
     std::vector<uchar> status;
     std::vector<float> err;
+    cv::calcOpticalFlowPyrLK(old_gray, new_gray, prevPoints, nextPoints, status, err,
+                             cv::Size(21,21), 3,
+                             cv::TermCriteria(cv::TermCriteria::COUNT|cv::TermCriteria::EPS, 30, 0.01),
+                             0, 0.001);
 
-    cv::Size winSize(21, 21);  // finestra di ricerca per LK
-    int maxLevel = 3;          // livelli di piramide
-    cv::TermCriteria criteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, 
-                              30, 0.01);  // max iterazioni o precisione
-
-    // Optical flow con algoritmo di Lucas-Kanade
-    cv::calcOpticalFlowPyrLK(old_gray, new_gray,
-                             prevPoints, nextPoints,
-                             status, err,
-                             winSize,
-                             maxLevel,
-                             criteria,
-                             0,    // flags
-                             0.001 // soglia minima eigenvalue
-    );
-
-    // -------------------- Aggiornamento dei TrackedMatch --------------------
-    std::vector<cv::Point2f> good_old;
-    std::vector<cv::Point2f> good_new;
+    // update tracked matches
+    std::vector<cv::Point2f> good_old, good_new;
     std::vector<bool> dynamic_current;
-
     for (size_t flow_idx = 0; flow_idx < opticalFlowToMatchIdx.size(); ++flow_idx) {
-    size_t match_idx = opticalFlowToMatchIdx[flow_idx];
+        size_t match_idx = opticalFlowToMatchIdx[flow_idx];
+        if (!status[flow_idx]) {
+            tracked_matches_[match_idx].is_active = false;
+            continue;
+        }
 
-    // Se il punto non è stato trovato, lo disattiviamo
-    if (!status[flow_idx]) {
-        tracked_matches_[match_idx].is_active = false;
-        continue;
+        cv::Point2f new_pt = nextPoints[flow_idx];
+        int px = std::max(0, std::min((int)std::round(new_pt.x), depth_float.cols - 1));
+        int py = std::max(0, std::min((int)std::round(new_pt.y), depth_float.rows - 1));
+        float depth_value = depth_float.at<float>(py, px);
+
+        if (!std::isfinite(depth_value)) {
+            ROS_WARN_STREAM("Bad depth at ("<<px<<","<<py<<") -- marking inactive");
+            tracked_matches_[match_idx].is_active = false;
+            continue;
+        }
+
+        float Z = depth_value * scale_factor;
+        float X = (new_pt.x - cx) * Z / fx;
+        float Y = (new_pt.y - cy) * Z / fy;
+
+        double movement = cv::norm(new_pt - prevPoints[flow_idx]);
+
+        TrackedMatch &tm = tracked_matches_[match_idx];
+        tm.pt = new_pt;
+        tm.position_3d = cv::Point3f(X, Y, Z);
+        tm.is_active = true;
+        if (movement >= movement_threshold_) tm.dynamic_point = true;
+        tm.history.push_back(tm.position_3d);
+
+        // debug: se tutto vicino a zero logga per indagine
+        if (std::fabs(X) < 1e-9 && std::fabs(Y) < 1e-9 && std::fabs(Z) < 1e-9) {
+            ROS_WARN_STREAM("Tiny 3D coords for match_idx="<<match_idx
+                            <<" pixel=("<<px<<","<<py<<") depth_raw="<<depth_value
+                            <<" -> X="<<X<<" Y="<<Y<<" Z="<<Z);
+        }
+
+        good_old.push_back(prevPoints[flow_idx]);
+        good_new.push_back(new_pt);
+        dynamic_current.push_back(tm.dynamic_point);
     }
 
-    cv::Point2f new_pt = nextPoints[flow_idx];
-    float depth_value = depth.at<float>(static_cast<int>(new_pt.y), static_cast<int>(new_pt.x));
-    float scale_factor = 2.0f; // stesso fattore
-    float Z = depth_value * scale_factor;
-    float X = (new_pt.x - cx) * Z / fx;
-    float Y = (new_pt.y - cy) * Z / fy;
+    // Salva punti (opzionale, dipende dalla tua funzione)
+    saveTrackedFeatures(tracked_matches_, "/home/corbe/heart_ws/src/heart_pkg/positions/tracked_features.txt");
 
-    // Calcolo del movimento
-    double movement = cv::norm(new_pt - prevPoints[flow_idx]);
-
-    // Corretto: prendo riferimento all'oggetto già esistente
-    TrackedMatch &tm = tracked_matches_[match_idx];
-    tm.pt = new_pt;
-    tm.position_3d = cv::Point3f(X, Y, Z);
-    tm.is_active = true;
-
-    // Se il movimento supera la soglia, il punto diventa dinamico
-    if (movement >= movement_threshold_)
-        tm.dynamic_point = true; 
-    tm.history.push_back(tm.position_3d);
-
-    // Preparazione dei punti per il recover della posa
-    good_old.push_back(prevPoints[flow_idx]);
-    good_new.push_back(new_pt);
-    dynamic_current.push_back(tm.dynamic_point);
-    }
-
-    saveTrackedFeatures(tracked_matches_, "/home/corbe/heart_ws/src/heart_pkg/positions/tracked_features2.txt");
-
-     // -------------------- Recupero della posa della camera --------------------
+    // recover pose se necessario
     if (!good_old.empty() && !good_new.empty()) {
         OpticalFlowPose::recoverPose(good_old, good_new, dynamic_current, curr_originale);
     }
 
-    // Aggiorno i punti dell'ultimo frame per eventuale reinizializzazione
     points_prev_ = good_new;
     dynamic_points_prev = dynamic_current;
 }
+
 
 
 
