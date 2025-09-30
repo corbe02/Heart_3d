@@ -16,6 +16,7 @@ def publish_video(video_path, topic_name, info_topic_name):
     cap = cv2.VideoCapture(video_path)
 
     fps = cap.get(cv2.CAP_PROP_FPS)
+    #fps = 60
     rate = rospy.Rate(fps)
 
     fx = rospy.get_param('/camera/fx', 745.0165)
@@ -68,7 +69,7 @@ if __name__ == '__main__':
         rospack = rospkg.RosPack()
         package_path = rospack.get_path('heart_pkg')
 
-        original_video = rospy.get_param('~original_video','HB_v1_cropped.mp4')
+        original_video = rospy.get_param('~original_video','HB_v1_src.mp4')
         video_path = original_video
         topic = '/video1/image_raw'
         info_topic = '/video1/camera_info'

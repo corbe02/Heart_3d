@@ -253,7 +253,7 @@ def plot_top_points(distances, sorted_pids, top_n=5, figsize=(10,6)):
 
 # ---------------- Esempio completo ----------------
 if __name__ == "__main__":
-    filename = "/home/corbe/heart_ws/src/heart_pkg/scripts/tracked_features.txt"
+    filename = "/home/corbe/heart_ws/src/heart_pkg/positions/tracked_features.txt"
 
     # Parsing e calcolo distanze
     data, plane_point, normal, distances = example_usage(filename, max_to_plot=None)

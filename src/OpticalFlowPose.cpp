@@ -19,8 +19,8 @@ OpticalFlowPose::OpticalFlowPose(ros::NodeHandle &nh)
     private_nh_.param("threshold", movement_threshold_, 10.0);
 
     // Subscriber con message_filters per sincronizzare RGB e depth
-    rgb_sub_.subscribe(nh, "/video1/image_raw", 1);  // Subscribe al topic RGB
-    depth_sub_.subscribe(nh, "/video1/depth", 1);    // Subscribe al topic Depth
+    rgb_sub_.subscribe(nh, "/video1/image_raw", 10);  // Subscribe al topic RGB
+    depth_sub_.subscribe(nh, "/video1/depth", 10);    // Subscribe al topic Depth
 
     // Definizione della policy di sincronizzazione (ApproximateTime)
     sync_.reset(new Sync(MySyncPolicy(10), rgb_sub_, depth_sub_));

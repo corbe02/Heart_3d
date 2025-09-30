@@ -13,6 +13,8 @@
 
 #include "Feature_extractor.h"
 #include "Visualizer.h"
+#include "data.h"
+
 
 #include "OpticalFlow.h"
 #include "TrackedMatch.h"
@@ -26,6 +28,7 @@ public:
     static void PublishRenderedImage(image_transport::Publisher pub, cv::Mat image, std::string encoding, std::string frame_id);
     static void recoverPose(const std::vector<cv::Point2f> &good_old, const std::vector<cv::Point2f> &good_new,const std::vector<bool>& dynamic, cv::Mat &current);
     double movement_threshold_;
+
 
 private:
 
@@ -52,8 +55,11 @@ private:
     cv::Mat depth_img_;
     std::vector<cv::Point2f> points_prev_;
     bool first_time_;
-    std::vector<bool> dynamic_points_prev;  
-    
+    std::vector<bool> dynamic_points_prev; 
+
+
 };
+    
+
 
 #endif // OPTICAL_FLOW_POSE_H

@@ -60,71 +60,70 @@ void Visualizer::drawDelaunay(const cv::Mat &current, std::vector<cv::Point2f> &
     }
 }
 
-void Visualizer::drawVoronoi(const cv::Mat &current, std::vector<cv::Point2f> &good_new, const cv::Scalar& color)
+void Visualizer::drawVoronoi(const cv::Mat &current,
+                             std::vector<cv::Point2f> &good_new,
+                             const cv::Scalar& color)
 {
-    if (good_new.size() < 2) //controllo di avere almeno 2 punti 
-        return;
+    int width = current.cols;
+    int height = current.rows;
 
-    cv::Size size = current.size();
-    cv::Rect rect(0, 0, size.width, size.height);
-    cv::Subdiv2D subdiv(rect);
+    // --- Rettangolo Subdiv2D leggermente più piccolo per evitare crash ai bordi ---
+    cv::Rect safeRect(0, 0, width - 2, height - 2);
+    cv::Subdiv2D subdiv(safeRect);
 
-    // Inserimento punti
-    for (const auto &point : good_new)
+    // --- Filtra e clampa i punti reali ---
+    std::vector<cv::Point2f> safe_points;
+    for (const auto &p : good_new)
     {
-        if (rect.contains(point))
-        {
-            try
-            {
-                subdiv.insert(point);
-            }
-            catch (const cv::Exception &e)
-            {
-                std::cerr << "Error inserting point in Voronoi: " << point << ", " << e.what() << std::endl;
-            }
-        }
+        if (!std::isfinite(p.x) || !std::isfinite(p.y))
+            continue;
+
+        float x = std::min(std::max(p.x, 0.0f), float(width - 3));
+        float y = std::min(std::max(p.y, 0.0f), float(height - 3));
+        safe_points.push_back(cv::Point2f(x, y));
     }
 
-    // Ottieni faccette di Voronoi
+    // --- Aggiungi punti di cornice per chiudere Voronoi ---
+    std::vector<cv::Point2f> borderPts = {
+        {0.0f, 0.0f},
+        {float(width-3), 0.0f},
+        {0.0f, float(height-3)},
+        {float(width-3), float(height-3)},
+        {float((width-3)/2), 0.0f},
+        {float((width-3)/2), float(height-3)},
+        {0.0f, float((height-3)/2)},
+        {float(width-3), float((height-3)/2)}
+    };
+    safe_points.insert(safe_points.end(), borderPts.begin(), borderPts.end());
+
+    // --- Controlla almeno 2 punti validi ---
+    if (safe_points.size() < 2)
+        return;
+
+    // --- Inserisci tutti i punti in Subdiv2D ---
+    for (const auto &p : safe_points)
+        subdiv.insert(p);
+
+    // --- Ottieni faccette di Voronoi ---
     std::vector<std::vector<cv::Point2f>> facets;
     std::vector<cv::Point2f> centers;
-    try
-    {
-        subdiv.getVoronoiFacetList(std::vector<int>(), facets, centers);
-    }
-    catch (const cv::Exception &e)
-    {
-        std::cerr << "Error retrieving Voronoi facets: " << e.what() << std::endl;
-        return;
-    }
+    subdiv.getVoronoiFacetList(std::vector<int>(), facets, centers);
 
+    // --- Disegna faccette e centri ---
     std::vector<cv::Point> ifacet;
     std::vector<std::vector<cv::Point>> ifacets(1);
-
-    // Disegna le faccette
     for (size_t i = 0; i < facets.size(); ++i)
     {
         ifacet.clear();
-        bool all_inside = true;
-
-        // Converti e verifica punti
         for (size_t j = 0; j < facets[i].size(); ++j)
-        {
-            cv::Point pt(cvRound(facets[i][j].x), cvRound(facets[i][j].y));
-            ifacet.push_back(pt);
-            if (!rect.contains(pt))
-            {
-                all_inside = false;
-                break;
-            }
-        }
+            ifacet.push_back(cv::Point(cvRound(facets[i][j].x), cvRound(facets[i][j].y)));
 
-        // Disegna solo faccette valide
-        if (all_inside)
-        {
-            ifacets[0] = ifacet;
-            cv::polylines(current, ifacets, true, color, 1, cv::LINE_AA, 0); // Contorno faccetta
-            cv::circle(current, centers[i], 3, color, cv::FILLED, cv::LINE_AA, 0); // Centro della cella
-        }
+        ifacets[0] = ifacet;
+        cv::polylines(current, ifacets, true, color, 1, cv::LINE_AA);
+        cv::circle(current, centers[i], 2, color, cv::FILLED, cv::LINE_AA);
     }
+
+    // --- opzionale: disegna contorno immagine ---
+    cv::rectangle(current, safeRect, cv::Scalar(0,255,0), 1);
 }
+
