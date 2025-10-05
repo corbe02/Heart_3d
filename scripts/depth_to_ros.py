@@ -15,8 +15,8 @@ def publish_video(video_path, topic_name, info_topic_name):
 
     cap = cv2.VideoCapture(video_path)
 
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    #fps = 60
+    #fps = cap.get(cv2.CAP_PROP_FPS)
+    fps = 20
     rate = rospy.Rate(fps)
 
     fx = rospy.get_param('/camera/fx', 745.0165)
