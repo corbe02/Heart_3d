@@ -59,11 +59,10 @@ void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,cv::Mat &current,double
     // ROI mask
     cv::Mat mask = cv::Mat::zeros(old_gray.size(), CV_8UC1);
 
-
     int width = old_gray.cols;
     int height = old_gray.rows;
     int margin_right = width / 12;
-    int margin_low = height / 10;
+    int margin_low = height / 3;
     int roi_width    = width / 3;
     int roi_height   = height /4;
     int x_start      = width - roi_width - margin_right;
@@ -73,6 +72,21 @@ void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,cv::Mat &current,double
     mask(ROI).setTo(255); 
 
     cv::Rect fullRect(0, 0, old_gray.cols, old_gray.rows);
+
+
+    // int width = old_gray.cols;
+    // int height = old_gray.rows;
+    // int margin_right = width / 12;
+    // int margin_low = height / 10;
+    // int roi_width    = width / 3;
+    // int roi_height   = height /4;
+    // int x_start      = width - roi_width - margin_right;
+    // int y_start = (height / 2) - (roi_height / 2)-margin_low;
+    // int y_start      = height / 20;
+    // cv::Rect ROI(x_start, y_start, roi_width, roi_height);
+    // mask(ROI).setTo(255); 
+
+    // cv::Rect fullRect(0, 0, old_gray.cols, old_gray.rows);
     // -------------------- INIZIALIZZAZIONE --------------------
     if (first_time_) {
         std::vector<cv::Point2f> initial_points;
@@ -216,23 +230,23 @@ void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,cv::Mat &current,double
     }
 
     // Salva punti 
-    saveTrackedFeatures(tracked_matches_, "/home/corbe/heart_ws/src/heart_pkg/positions/tracked_features5.txt");
+    saveTrackedFeatures(tracked_matches_, "/home/altair/anna_ws/src/Heart_3d/positions/tracked_features2.txt");
 
 
 
-    // //Pubblicazione
-    // if (!good_old.empty() && !good_new.empty()) {
-    //     Visualizer::drawVoronoi(curr_originale, good_new, cv::Scalar(0, 255, 0)); // disegno il diagramma di Voronoi
+    //Pubblicazione
+    if (!good_old.empty() && !good_new.empty()) {
+        Visualizer::drawVoronoi(curr_originale, good_new, cv::Scalar(0, 255, 0)); // disegno il diagramma di Voronoi
         
-    //         // Disegna vettori di movimento
-    //     for (size_t i = 0; i < good_new.size(); ++i) {
-    //         cv::Point2f start = good_old[i];  // posizione precedente
-    //         cv::Point2f end   = good_new[i];  // posizione attuale
-    //         cv::arrowedLine(curr_originale, start, end, cv::Scalar(0, 0, 255), 2, cv::LINE_AA, 0, 0.7);
-    //         // colore rosso, spessore 2, anti-alias, scala freccia 0.3
-    //     }
-    // OpticalFlowPose::recoverPose(good_old, good_new, dynamic_current, curr_originale);
-    // }
+            // Disegna vettori di movimento
+        for (size_t i = 0; i < good_new.size(); ++i) {
+            cv::Point2f start = good_old[i];  // posizione precedente
+            cv::Point2f end   = good_new[i];  // posizione attuale
+            cv::arrowedLine(curr_originale, start, end, cv::Scalar(0, 0, 255), 2, cv::LINE_AA, 0, 0.7);
+            // colore rosso, spessore 2, anti-alias, scala freccia 0.3
+        }
+    OpticalFlowPose::recoverPose(good_old, good_new, dynamic_current, curr_originale);
+    }
     
     points_prev_ = good_new;
     dynamic_points_prev = dynamic_current;

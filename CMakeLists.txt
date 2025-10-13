@@ -33,12 +33,12 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${Eigen3_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
-  include
-  /home/corbe/wavelib/header
+  ${PROJECT_SOURCE_DIR}/include
 )
 
-# Percorso alla libreria statica di WaveLib
-set(WAVELIB_LIB /home/corbe/wavelib/build/Bin/libwavelib.a)
+
+# # Percorso alla libreria statica di WaveLib
+# set(WAVELIB_LIB /home/corbe/wavelib/build/Bin/libwavelib.a)
 
 # Aggiungi l'eseguibile
 add_executable(opticalflowpose
@@ -55,5 +55,5 @@ target_link_libraries(opticalflowpose
   ${catkin_LIBRARIES}
   ${Eigen3_LIBRARIES}
   ${OpenCV_LIBS}
-  ${WAVELIB_LIB}
+  #${WAVELIB_LIB}
 )
