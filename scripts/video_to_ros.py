@@ -69,7 +69,7 @@ if __name__ == '__main__':
         rospack = rospkg.RosPack()
         package_path = rospack.get_path('heart_pkg')
 
-        original_video = rospy.get_param('~original_video','HB_v1_src.mp4')
+        original_video = rospy.get_param('~original_video','original_img_src.mp4')
         video_path = original_video
         topic = '/video1/image_raw'
         info_topic = '/video1/camera_info'

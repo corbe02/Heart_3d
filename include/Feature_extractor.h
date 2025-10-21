@@ -10,7 +10,7 @@ class FeatureExtractor {
 public:
     FeatureExtractor(double thre);
     static cv::Mat adaptiveHistogramEqualization(const cv::Mat &img);
-    void featureDetection(const cv::Mat &prev,const cv::Mat &curr,image_transport::Publisher image_pub_,const cv::Mat &depth);
+    void featureDetection(const cv::Mat &prev,const cv::Mat &curr,image_transport::Publisher image_pub_,const cv::Mat &depth,const cv::Mat &mask);
     cv::Mat extractFeatures(const cv::Mat &img, std::vector<cv::Point2f> &keypoints2f);
 private:
     bool first_time_;

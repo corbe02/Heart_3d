@@ -10,7 +10,7 @@
 class OpticalFlow{
 public:
     OpticalFlow();
-    void computeOpticalFlow(const cv::Mat &prev, cv::Mat &current, double &movement_threshold_,cv::Mat &current_originale,const cv::Mat &depth);
+    void computeOpticalFlow(const cv::Mat &prev, cv::Mat &current, double &movement_threshold_,cv::Mat &current_originale,const cv::Mat &depth,const cv::Mat &mask);
     //void publishTrackedMatch(const TrackedMatch& tm);
     static void OpticalFlowTriangulation(const cv::Mat &prev_l, cv::Mat &current_l,
                               const cv::Mat &prev_r, cv::Mat &current_r,

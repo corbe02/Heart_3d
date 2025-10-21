@@ -3,6 +3,6 @@
 
     <node pkg="heart_pkg" name="video_to_ros" type="video_to_ros.py" output="screen">
         <param name="original_video"
-            value="/home/altair/anna_ws/src/Heart_3d/videos/HB_v1_src.mp4" />
+            value="/home/altair/anna_ws/src/Heart_3d/videos/original_img_src.mp4" />
     </node>
 </launch>

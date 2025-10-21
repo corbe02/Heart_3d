@@ -14,7 +14,7 @@ OpticalFlow::OpticalFlow() {}
 
 
 
-void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,cv::Mat &current,double &movement_threshold_,cv::Mat &curr_originale,const cv::Mat &depth)
+void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,cv::Mat &current,double &movement_threshold_,cv::Mat &curr_originale,const cv::Mat &depth,const cv::Mat &mask)
 {
     cv::Mat old_gray, new_gray;
 
@@ -57,21 +57,21 @@ void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,cv::Mat &current,double
     // Scale factor per la depth
     float scale_factor = 1.0f; // METRI PER UNITA' NELLA DEPTH 
     // ROI mask
-    cv::Mat mask = cv::Mat::zeros(old_gray.size(), CV_8UC1);
+    // cv::Mat mask = cv::Mat::zeros(old_gray.size(), CV_8UC1);
 
-    int width = old_gray.cols;
-    int height = old_gray.rows;
-    int margin_right = width / 12;
-    int margin_low = height / 3;
-    int roi_width    = width / 3;
-    int roi_height   = height /4;
-    int x_start      = width - roi_width - margin_right;
-    int y_start = (height / 2) - (roi_height / 2)-margin_low;
-    //int y_start      = height / 20;
-    cv::Rect ROI(x_start, y_start, roi_width, roi_height);
-    mask(ROI).setTo(255); 
+    // int width = old_gray.cols;
+    // int height = old_gray.rows;
+    // int margin_right = width / 12;
+    // int margin_low = height / 3;
+    // int roi_width    = width / 3;
+    // int roi_height   = height /4;
+    // int x_start      = width - roi_width - margin_right;
+    // int y_start = (height / 2) - (roi_height / 2)-margin_low;
+    // //int y_start      = height / 20;
+    // cv::Rect ROI(x_start, y_start, roi_width, roi_height);
+    // mask(ROI).setTo(255); 
 
-    cv::Rect fullRect(0, 0, old_gray.cols, old_gray.rows);
+    // cv::Rect fullRect(0, 0, old_gray.cols, old_gray.rows);
 
 
     // int width = old_gray.cols;
@@ -91,7 +91,7 @@ void OpticalFlow::computeOpticalFlow(const cv::Mat &prev,cv::Mat &current,double
     if (first_time_) {
         std::vector<cv::Point2f> initial_points;
 
-        cv::goodFeaturesToTrack(old_gray, initial_points, 5, 0.0005, 20, mask);
+        cv::goodFeaturesToTrack(old_gray, initial_points, 10, 0.0005, 20, mask);
         // - old_gray: immagine in scala di grigi su cui cercare i punti
         // - initial_points: vettore di output che conterrà i punti trovati
         // - 100: numero massimo di punti da rilevare

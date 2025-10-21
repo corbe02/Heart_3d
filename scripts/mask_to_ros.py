@@ -7,7 +7,7 @@ from cv_bridge import CvBridge
 import rospkg
 
 def publish_video(video_path, topic_name, info_topic_name):
-    rospy.init_node('depth_publisher', anonymous=True)
+    rospy.init_node('mask_publisher', anonymous=True)
     pub = rospy.Publisher(topic_name, Image, queue_size=10)
     camera_info_pub = rospy.Publisher(info_topic_name, CameraInfo, queue_size=10)
     
@@ -64,15 +64,15 @@ def publish_video(video_path, topic_name, info_topic_name):
 
 if __name__ == '__main__':
     try:
-        rospy.init_node('depth_publisher', anonymous=True)
+        rospy.init_node('mask_publisher', anonymous=True)
 
         rospack = rospkg.RosPack()
         package_path = rospack.get_path('heart_pkg')
 
-        depth_video = rospy.get_param('~depth_video','original_img_vis.mp4')
-        video_path = depth_video
-        topic = '/video1/depth'
-        info_topic = '/video1/depth_info'
+        mask_video = rospy.get_param('~mask_video','obj_3.mp4')
+        video_path = mask_video
+        topic = '/video1/mask'
+        info_topic = '/video1/mask_info'
         publish_video(video_path, topic, info_topic)
 
 

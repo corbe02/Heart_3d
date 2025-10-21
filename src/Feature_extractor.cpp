@@ -39,14 +39,14 @@ cv::Mat FeatureExtractor::adaptiveHistogramEqualization(const cv::Mat &img) {
 
 }
 
-void FeatureExtractor::featureDetection(const cv::Mat &pre,const cv::Mat &current,image_transport::Publisher image_pub_,const cv::Mat &depth) {
+void FeatureExtractor::featureDetection(const cv::Mat &pre,const cv::Mat &current,image_transport::Publisher image_pub_,const cv::Mat &depth,const cv::Mat &mask) {
     //Aumenta il contrasto e converti in scala di grigi
     cv::Mat current_copy = current.clone();
     cv::Mat curr = adaptiveHistogramEqualization(current);
     cv::Mat prev = adaptiveHistogramEqualization(pre);
 
     
-    opt_flow.computeOpticalFlow(prev, curr, thres_,current_copy,depth);
+    opt_flow.computeOpticalFlow(prev, curr, thres_,current_copy,depth, mask);
     
 
 }

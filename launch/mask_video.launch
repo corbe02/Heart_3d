@@ -1,0 +1,8 @@
+<launch>
+    <rosparam file="$(find heart_pkg)/config/endoscope.yaml" command="load"/>
+
+    <node pkg="heart_pkg" name="video_to_ros_mask" type="mask_to_ros.py" output="screen">
+        <param name="mask_video"
+            value="/home/altair/anna_ws/src/Heart_3d/videos/obj_3.mp4" />
+    </node>
+</launch>
